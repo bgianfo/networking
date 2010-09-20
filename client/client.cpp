@@ -110,7 +110,7 @@ int setupSocket( char* hostname, int port )
  */
 void usage( char* binary )
 {
-	cerr << "Usage: " << binary << "hostname port " << endl;
+	cerr << "Usage: " << binary << " hostname port " << endl;
 }
 
 void addRecord( int sock )
