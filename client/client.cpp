@@ -29,6 +29,8 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include "common.h"
+
 /**
  * Setup the connection to the server and return the sockets file descriptor.
  *
