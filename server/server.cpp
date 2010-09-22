@@ -15,12 +15,12 @@
 #include <unistd.h>
 
 #include <iostream>
-	using std::cerr;
-	using std::cout;
-	using std::endl;
+  using std::cerr;
+  using std::cout;
+  using std::endl;
 
 #include <vector>
-	using std::vector;
+  using std::vector;
 
 #include <strings.h>
 #include <errno.h>
@@ -32,208 +32,238 @@
 
 #include "common.h"
 
-/* Function prototypes and global variables */
+//
+// Global variables used to track program state across threads.
+//
 
-int	threadCount; // Global variable thread count
+int threadCount; // Global variable tracking thread count
 
-vector<record_t> database;
+vector<record_t> database; // Our "database" of records
 
+/**
+ * Try to add a given record to the database.
+ *
+ * @param[in] rec - The new record to add.
+ * @param[in] sock - The client socket to use when responding.
+ *
+ * @return True on success, false on failure.
+ */
 bool addRecord( record_t rec, int sock )
 {
 
-	bool exists = false;
-	for ( size_t i = 0; i < database.size(); ++i )
-	{
-		if ( database[i].id == rec.id )
-		{
-			exists = true;
-			break;
-		}
-	}
+  bool exists = false;
+  for ( size_t i = 0; i < database.size(); ++i )
+  {
+    if ( database[i].id == rec.id )
+    {
+      exists = true;
+      break;
+    }
+  }
 
-	if ( exists )
-	{
-		record_t response;
-		bzero( &response, sizeof( response ) );
+  record_t response;
+  bzero( &response, sizeof( response ) );
+  if ( exists )
+  {
+    response.command = ADD_FAILURE;
+  }
+  else
+  {
+    // Insert the new record
+    database.push_back( rec );
+    response.command = ADD_SUCCESS;
+  }
 
-		response.command = ADD_FAILURE;
-
-		write( sock, (char*) &response, sizeof( response ) );
-	
-		return false;
-	}
-	else
-	{
-		// Insert the new record
-		database.push_back( rec );
-
-		record_t response;
-		bzero( &response, sizeof( response ) );
-
-		response.command = ADD_SUCCESS;
-
-		write( sock, (char*) &response, sizeof( response ) );
-
-		return true;
-	}
+  write( sock, (char*) &response, sizeof( response ) );
+  return not exits;
 }
 
+/**
+ * Try to fetch an existing record from the database.
+ *
+ * @param[in] rec - The record to look for, using id field.
+ * @param[in] sock - The socket to use when sending result.
+ *
+ * @return True on sucess, fales on failure.
+ */
 bool getRecord( record_t rec, int sock )
 {
 
-	bool exists = false;
-	record_t result;
-	for ( size_t i = 0; i < database.size(); ++i )
-	{
-		if ( database[i].id == rec.id )
-		{
-			exists = true;
-			result = database[i];
-			break;
-		}
-	}
+  bool found = false;
+  record_t result;
+  for ( size_t i = 0; i < database.size(); ++i )
+  {
+    if ( database[i].id == rec.id )
+    {
+      found = true;
+      memcpy( (char*) &result, (char*) &(database[i]), sizeof( database ) );
+      break;
+    }
+  }
 
-	if ( exists )
-	{
-		result.command = ADD_SUCCESS;
-		write( sock, (char*) &result, sizeof( result ) );
-		return true;
-	}
-	else
-	{
-		record_t response;
-		bzero( &response, sizeof( response ) );
+  if ( found )
+  {
+    result.command = ADD_SUCCESS;
+  }
+  else
+  {
+    bzero( &result, sizeof( result ) );
+    result.command = RET_FAILURE;
+  }
 
-		response.command = RET_FAILURE;
-
-		write( sock, (char*) &response, sizeof( response ) );
-		return false;
-	}
+  write( sock, (char*) &result, sizeof( response ) );
+  return exists;
 }
-void* handleClient( void* arg )
+
+/**
+ * Threading function to respond to a incoming client request.
+ *
+ * @param[in] socket - The socket file descriptor, casted to a void* 
+ * in order to work with the threading library.
+ *
+ * @return EXIT_SUCCESS
+ */
+void* handleClient( void* socket )
 {
 
-	long larg = reinterpret_cast<long>( arg );
-	int threadSocket = static_cast<int>( larg );
+  // Do the proper, portable conversion from (void*) to int
+  long lsocket = reinterpret_cast<long>( socket );
+  int threadSocket = static_cast<int>( lsocket );
 
-	record_t request;
+  //
+  // Unpack the request
+  //
+  record_t request;
+  read( threadSocket,
+        reinterpret_cast<char*>( &request ),
+        sizeof( request ) );
 
-  read( threadSocket, reinterpret_cast<char*>( &request ), sizeof( request ) );
+  //
+  // Perform the actual action requested
+  //
+  switch ( request.command )
+  {
+    case add_t:
+      addRecord( request, threadSocket );
+      break;
+    case retrive_t:
+      getRecord( request, threadSocket );
+      break;
 
-	switch( request.command )
-	{
-		case add_t:
-			addRecord( request, threadSocket );
-			break;
-		case retrive_t:
-			getRecord( request, threadSocket );
-			break;
+    default:
+      break;
+  }
 
-		default:
-			break;
-	}
+  //
+  // Close the socket and exit this thread 
+  //
+  close( threadSocket );
+  threadCount--;
+  thr_exit( static_cast<void*>( EXIT_SUCCESS ) );
 
-	/* Close the socket and exit this thread */
-	close( threadSocket );
-
-	threadCount--;
-
-	thr_exit( static_cast<void*>( EXIT_SUCCESS ) );
-
-	return EXIT_SUCCESS;
+  return EXIT_SUCCESS;
 }
 
+/**
+ * Program entry point.
+ *
+ * @param[in] argc - The number of command line arguments.
+ * @param[in] argv - The actual command line arguments.
+ *
+ * @return EXIT_SUCCESS on success, EXIT_FAILURE on failure.
+ */
 int main( int argc, char **argv )
 {
-	thread_t chld_thr;
- 	
-	threadCount = 0;
 
-	//
-	// Make sure that the port argument was given
-	//
-	if ( argc != 2 )
-	{
-		cerr << "Usage: " << argv[0] << " port" << endl;
-		exit( EXIT_FAILURE );
-	}
+  thread_t chld_thr;
+  
+  threadCount = 0;
 
-	//
-	// Get the port number, and make sure that it is legitimate
-	//
-	int port = atoi( argv[ 1 ] );
-	if ( port < PORT_MIN || port > PORT_MAX )
-	{
+  //
+  // Make sure that the port argument was given
+  //
+  if ( argc != 2 )
+  {
+          cerr << "Usage: " << argv[0] << " port" << endl;
+          exit( EXIT_FAILURE );
+  }
 
-		cerr << port << ": invalid port number" << endl;
-		exit( EXIT_FAILURE );
-	}
+  //
+  // Get the port number, and make sure that it is legitimate
+  //
+  int port = atoi( argv[ 1 ] );
+  if ( port < PORT_MIN || port > PORT_MAX )
+  {
 
-	//
-	// Create a stream (TCP) socket.  The protocol argument is left 0 to
-	// allow the system to choose an appropriate protocol.
-	//
-	int sock = socket( AF_INET, SOCK_STREAM, 0 );
-	if ( sock < 0 )
-	{
-		cerr << "socket: " << strerror( errno ) << endl;
-		exit( EXIT_FAILURE );
-	}
+          cerr << port << ": invalid port number" << endl;
+          exit( EXIT_FAILURE );
+  }
 
-	//
-	// Fill in the addr structure with the port number given by
-	// the user.  The OS kernel will fill in the host portion of
-	// the address depending on which network interface is used.
-	//
-	struct sockaddr_in server;
-	bzero( &server, sizeof( server ) );
-	server.sin_family = AF_INET;
-	server.sin_port = htons( port );
+  //
+  // Create a stream (TCP) socket.  The protocol argument is left 0 to
+  // allow the system to choose an appropriate protocol.
+  //
+  int sock = socket( AF_INET, SOCK_STREAM, 0 );
+  if ( sock < 0 )
+  {
+          cerr << "socket: " << strerror( errno ) << endl;
+          exit( EXIT_FAILURE );
+  }
 
-	//
-	// Bind this port number to this socket so that other programs can
-	// connect to this socket by specifying the port number.
-	//
-	if ( bind( sock, (struct sockaddr *)&server, sizeof( server ) ) < 0 )
-	{
-		cerr << "bind: " << strerror( errno ) << endl;
-		exit( EXIT_FAILURE );
-	}
+  //
+  // Fill in the addr structure with the port number given by
+  // the user.  The OS kernel will fill in the host portion of
+  // the address depending on which network interface is used.
+  //
+  struct sockaddr_in server;
+  bzero( &server, sizeof( server ) );
+  server.sin_family = AF_INET;
+  server.sin_port = htons( port );
 
-	/* set the level of thread concurrency we desire */
+  //
+  // Bind this port number to this socket so that other programs can
+  // connect to this socket by specifying the port number.
+  //
+  if ( bind( sock, (struct sockaddr *)&server, sizeof( server ) ) < 0 )
+  {
+          cerr << "bind: " << strerror( errno ) << endl;
+          exit( EXIT_FAILURE );
+  }
+
+  /* set the level of thread concurrency we desire */
   thr_setconcurrency(2);
 
-	// Make this socket passive, that is, one that awaits connections
-	// rather than initiating them.
-	if ( listen( sock, 5 ) < 0 )
-	{
-		cerr << "listen: " << strerror( errno ) << endl;
-		exit( EXIT_FAILURE );
-	}
+  // Make this socket passive, that is, one that awaits connections
+  // rather than initiating them.
+  if ( listen( sock, 5 ) < 0 )
+  {
+          cerr << "listen: " << strerror( errno ) << endl;
+          exit( EXIT_FAILURE );
+  }
 
-	//
-	// Now start serving clients
-	//
-	for(;;)
-	{
+  //
+  // Now start serving clients
+  //
+  for(;;)
+  {
 
-		cout << "WAITING FOR A CONNECTION ..." << endl;
-		struct sockaddr_in cli_addr; 
-		socklen_t clilen = sizeof(cli_addr);
-		int newsockfd = accept( sock, (struct sockaddr *) &cli_addr, &clilen ); 
+          cout << "WAITING FOR A CONNECTION ..." << endl;
+          struct sockaddr_in cli_addr; 
+          socklen_t clilen = sizeof(cli_addr);
+          int newsockfd = accept( sock, (struct sockaddr *) &cli_addr, &clilen ); 
 
-		if ( newsockfd < 0 )
-		{
-			fprintf( stderr,"server: accept error\n" );
-			exit( EXIT_FAILURE );
-		}
+          if ( newsockfd < 0 )
+          {
+                  fprintf( stderr,"server: accept error\n" );
+                  exit( EXIT_FAILURE );
+          }
 
-		// Create a thread to handle this connection.
-		thr_create( NULL, 0, handleClient, (void*) newsockfd, THR_DETACHED, &chld_thr ); 
+          // Create a thread to handle this connection.
+          thr_create( NULL, 0, handleClient, (void*) newsockfd, THR_DETACHED, &chld_thr ); 
 
-		/* The server is now free to accept another socket request */
-		cout << "NEW SERVER THREAD CREATED." << endl;
-		threadCount++;
-	}
-	return EXIT_SUCCESS;
+          /* The server is now free to accept another socket request */
+          cout << "NEW SERVER THREAD CREATED." << endl;
+          threadCount++;
+  }
+  return EXIT_SUCCESS;
 }
