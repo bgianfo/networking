@@ -1,16 +1,3 @@
-// $com CC $@ -o $* -lsocket -lnsl -library=iostream
-//
-// File:	tcp-server.C
-// Author:	K. Reek
-// Modified by:	Narayan J. Kulkarni
-// Description:	Multithreaded Server, full duplex TCP connection
-// Usage:	tcp-server port
-//		where 'port' is the well-known port number to use.
-//
-// This program uses TCP to establish connections with clients and process
-// requests.
-//
-
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -28,7 +15,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <thread.h>
+
+#include <pthread.h>
 
 #include "common.h"
 
@@ -66,16 +54,21 @@ bool addRecord( record_t rec, int sock )
   if ( exists )
   {
     response.command = ADD_FAILURE;
+    cout << "Record ID " << rec.id << " exists." << endl;
   }
   else
   {
     // Insert the new record
     database.push_back( rec );
     response.command = ADD_SUCCESS;
+    cout << "Adding record" << endl;
+    cout << "ID: " << rec.id << endl;
+    cout << "Name: " << rec.name << endl;
+    cout << "Age: " << rec.age << endl;
   }
 
   write( sock, (char*) &response, sizeof( response ) );
-  return not exits;
+  return not exists;
 }
 
 /**
@@ -96,23 +89,26 @@ bool getRecord( record_t rec, int sock )
     if ( database[i].id == rec.id )
     {
       found = true;
-      memcpy( (char*) &result, (char*) &(database[i]), sizeof( database ) );
+      memcpy( (void*) &result, (void*) &(database[i]), sizeof( database ) );
       break;
     }
   }
 
+  bzero( &result, sizeof( result ) );
   if ( found )
   {
     result.command = ADD_SUCCESS;
+    cout << "Record ID " << rec.id << " added." << endl;
   }
   else
   {
-    bzero( &result, sizeof( result ) );
     result.command = RET_FAILURE;
+
+    cout << "Record ID " << rec.id << " add failed." << endl;
   }
 
-  write( sock, (char*) &result, sizeof( response ) );
-  return exists;
+  write( sock, (char*) &result, sizeof( result.command ) );
+  return found;
 }
 
 /**
@@ -128,38 +124,46 @@ void* handleClient( void* socket )
 
   // Do the proper, portable conversion from (void*) to int
   long lsocket = reinterpret_cast<long>( socket );
-  int threadSocket = static_cast<int>( lsocket );
+  int sock = static_cast<int>( lsocket );
 
-  //
-  // Unpack the request
-  //
+  int len; 
   record_t request;
-  read( threadSocket,
-        reinterpret_cast<char*>( &request ),
-        sizeof( request ) );
-
-  //
-  // Perform the actual action requested
-  //
-  switch ( request.command )
+  while ( ( len = read( sock, reinterpret_cast<char*>( &request ), sizeof( request ) )) > 0 )
   {
-    case add_t:
-      addRecord( request, threadSocket );
-      break;
-    case retrive_t:
-      getRecord( request, threadSocket );
-      break;
 
-    default:
-      break;
+    //
+    // Perform the actual action requested
+    //
+    switch ( request.command )
+    {
+      case add_t:
+        addRecord( request, sock );
+        break;
+      case retrive_t:
+        getRecord( request, sock );
+        break;
+
+      default:
+        break;
+    }
+
+    bzero( &request, sizeof( request ) );
   }
+
+  cout << "EXITING SERVER THREAD" << endl;
+  //
+  // Shutdown reads and writes to the socket
+  //
+  shutdown( sock, SHUT_RDWR );
 
   //
   // Close the socket and exit this thread 
   //
-  close( threadSocket );
+  close( sock );
+
   threadCount--;
-  thr_exit( static_cast<void*>( EXIT_SUCCESS ) );
+
+  pthread_exit( static_cast<void*>( EXIT_SUCCESS ) );
 
   return EXIT_SUCCESS;
 }
@@ -175,7 +179,7 @@ void* handleClient( void* socket )
 int main( int argc, char **argv )
 {
 
-  thread_t chld_thr;
+  pthread_t childThread;
   
   threadCount = 0;
 
@@ -184,8 +188,8 @@ int main( int argc, char **argv )
   //
   if ( argc != 2 )
   {
-          cerr << "Usage: " << argv[0] << " port" << endl;
-          exit( EXIT_FAILURE );
+    cerr << "Usage: " << argv[0] << " port" << endl;
+    exit( EXIT_FAILURE );
   }
 
   //
@@ -194,9 +198,8 @@ int main( int argc, char **argv )
   int port = atoi( argv[ 1 ] );
   if ( port < PORT_MIN || port > PORT_MAX )
   {
-
-          cerr << port << ": invalid port number" << endl;
-          exit( EXIT_FAILURE );
+    cerr << port << ": invalid port number" << endl;
+    exit( EXIT_FAILURE );
   }
 
   //
@@ -206,8 +209,8 @@ int main( int argc, char **argv )
   int sock = socket( AF_INET, SOCK_STREAM, 0 );
   if ( sock < 0 )
   {
-          cerr << "socket: " << strerror( errno ) << endl;
-          exit( EXIT_FAILURE );
+    cerr << "socket: " << strerror( errno ) << endl;
+    exit( EXIT_FAILURE );
   }
 
   //
@@ -226,44 +229,46 @@ int main( int argc, char **argv )
   //
   if ( bind( sock, (struct sockaddr *)&server, sizeof( server ) ) < 0 )
   {
-          cerr << "bind: " << strerror( errno ) << endl;
-          exit( EXIT_FAILURE );
+    cerr << "bind: " << strerror( errno ) << endl;
+    exit( EXIT_FAILURE );
   }
-
-  /* set the level of thread concurrency we desire */
-  thr_setconcurrency(2);
 
   // Make this socket passive, that is, one that awaits connections
   // rather than initiating them.
-  if ( listen( sock, 5 ) < 0 )
+  if ( listen( sock, 10 ) < 0 )
   {
-          cerr << "listen: " << strerror( errno ) << endl;
-          exit( EXIT_FAILURE );
+    cerr << "listen: " << strerror( errno ) << endl;
+    exit( EXIT_FAILURE );
   }
 
   //
   // Now start serving clients
   //
-  for(;;)
+  while ( true )
   {
+    cout << "WAITING FOR A CONNECTION ..." << endl;
 
-          cout << "WAITING FOR A CONNECTION ..." << endl;
-          struct sockaddr_in cli_addr; 
-          socklen_t clilen = sizeof(cli_addr);
-          int newsockfd = accept( sock, (struct sockaddr *) &cli_addr, &clilen ); 
+    struct sockaddr_in address;
+    socklen_t addressLen = sizeof( address );
+    int newsockfd = accept( sock, (struct sockaddr*)&address, &addressLen ); 
 
-          if ( newsockfd < 0 )
-          {
-                  fprintf( stderr,"server: accept error\n" );
-                  exit( EXIT_FAILURE );
-          }
+    if ( newsockfd < 0 )
+    {
+      cerr << "server: accept error" << endl; 
+      exit( EXIT_FAILURE );
+    }
+    else
+    {
+      cout << "Connected to: " << inet_ntoa( address.sin_addr ) 
+           << " on port " <<  ntohs( address.sin_port ) << endl; 
+    }
 
-          // Create a thread to handle this connection.
-          thr_create( NULL, 0, handleClient, (void*) newsockfd, THR_DETACHED, &chld_thr ); 
+    // Create a thread to handle this connection.
+    pthread_create( &childThread, NULL, handleClient, (void*) newsockfd ); 
 
-          /* The server is now free to accept another socket request */
-          cout << "NEW SERVER THREAD CREATED." << endl;
-          threadCount++;
+    /* The server is now free to accept another socket request */
+    cout << "NEW SERVER THREAD CREATED." << endl;
+    threadCount++;
   }
   return EXIT_SUCCESS;
 }

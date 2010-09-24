@@ -81,7 +81,27 @@ int setupSocket( char* hostname, int port )
  */
 void usage( char* binary )
 {
-	cerr << "Usage: " << binary << " hostname port " << endl;
+  cerr << "Usage: " << binary << " hostname port " << endl;
+}
+
+
+int obtainInt( char* msg )
+{
+  int value = 0;
+  bool valid = false;
+  while ( not valid )
+  {
+    int ret = scanf( "%d", &value );
+    if ( ret == EOF || value == 0 )
+    {
+      cerr << msg;
+    } 
+    else
+    {
+      valid = true;
+    }
+  }
+  return value; 
 }
 
 /**
@@ -91,49 +111,17 @@ void usage( char* binary )
  */
 void addRecord( int sock )
 {
-
   record_t newRecord;
-  cout << "Enter id (interger):";
-
   newRecord.command = add_t;
 
-  bool valid = false;
-  while ( not valid )
-  {
-    if ( scanf( "%d", &newRecord.id ) == EOF )
-    {
-      cerr << "ID should be a non-zero integer):";
-    } 
-    else if ( newRecord.id == 0 ) 
-    {
-      cerr << "ID should be a non-zero integer):";
-    }
-    else
-    {
-      valid = true;
-    }
-  }
+  cout << "Enter id (interger):";
+  newRecord.id = obtainInt( "ID should be a non-zero integer):" );
 
   cout << "Enter name (up to 32 char):";
   scanf( "%32s", newRecord.name );
 
   cout << "Enter age (integer):";
-  valid = false;
-  while ( not valid )
-  {
-    if ( scanf( "%d", &newRecord.age ) == EOF )
-    {
-      cerr << "Age should be a non-zero integer):";
-    } 
-    else if ( newRecord.age == 0 ) 
-    {
-      cerr << "Age should be a non-zero integer):";
-    }
-    else
-    {
-      valid = true;
-    }
-  }
+  newRecord.age = obtainInt( "Age should be a non-zero integer):" );
 
   // Now do the actual writing of the data out to the socket.
   write( sock, (char*) &newRecord, sizeof(newRecord) );
@@ -141,7 +129,7 @@ void addRecord( int sock )
   record_t resultRec;
   bzero( &resultRec, sizeof( resultRec ) );
 
-  read( sock, (char*) &resultRec, sizeof(resultRec) );
+  read( sock, (char*) &resultRec, sizeof(resultRec.command) );
 
   if ( resultRec.command == ADD_SUCCESS )
   {
@@ -162,30 +150,20 @@ void addRecord( int sock )
 void retriveRecord( int sock )
 {
   record_t findRecord;
+  bzero( &findRecord, sizeof( findRecord ) );
+
   findRecord.command = retrive_t;
+  findRecord.id = 0;
 
   cout << "Enter id (interger):";
-
-  bool valid = false;
-  while ( not valid )
-  {
-    if ( scanf( "%d", &findRecord.id ) == EOF )
-    {
-      cout << "ID should be a non-zero integer):";
-    } 
-    else if ( findRecord.id == 0 ) 
-    {
-      cout << "ID should be a non-zero integer):";
-    }
-    else
-    {
-      valid = true;
-    }
-  }
+  findRecord.id = obtainInt( "ID should be a non-zero integer):" );
 
   // Now do the actual writing of the data out to the socket.
-  write( sock, (char*) &findRecord, sizeof(findRecord) );
+  write( sock, (char*) &findRecord, sizeof(findRecord.command) + sizeof(findRecord.id) );
 
+  cout << "DEBUG: " << endl;
+  cout << "\t command: " << findRecord.command << endl;  
+  cout << "\t id: " << findRecord.id << endl;  
 
   record_t resultRec;
   bzero( &resultRec, sizeof( resultRec ) );
@@ -205,7 +183,6 @@ void retriveRecord( int sock )
     cout << "ID " << findRecord.id << " does not exist" << endl;
   }
 }
-
 
 
 /**
@@ -236,30 +213,28 @@ int main( int argc, char** argv )
     
     int sock = setupSocket( hostname, port );
 
-    bool shouldQuit = false;
-    while ( not shouldQuit )	
+    while ( true )	
     {
 
       cout << "Enter command (" << add_t << " for Add, " << retrive_t 
            << " for Retrive, " << quit_t << " to quit):"; 
 
-      int cmd; 
+      int cmd = 100; 
       scanf( "%d", &cmd );
       
-      switch ( cmd )
+      if ( cmd == add_t )
       {
-        case add_t:
-          addRecord( sock );
-          break;
-        case retrive_t:
-          retriveRecord( sock );
-          break;
-        case quit_t:
-          close( sock );
-          shouldQuit = true;
-          break;
-        default:
-          break;
+        addRecord( sock );
+      }
+      else if ( cmd == retrive_t )
+      {
+        retriveRecord( sock );
+      }
+      else if ( cmd == quit_t )
+      {
+        shutdown( sock, SHUT_RDWR );
+        close( sock );
+        break;
       }
     }
   }

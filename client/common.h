@@ -20,7 +20,7 @@
 #define RET_SUCCESS 0
 #define RET_FAILURE 1
 
-#define MAX_LEN 32
+#define MAX_LEN 33
 
 /**
  * A struct defining the data storage
@@ -36,10 +36,10 @@ typedef struct
 
 
 /* Enum defining all actions the user can initiate */
-enum {
-  add_t,
-  retrive_t,
-  quit_t
+typedef enum {
+  add_t = 0,
+  retrive_t = 1,
+  quit_t = 2
 } actions_t;
 
 #endif // _COMMON_H
