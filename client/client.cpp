@@ -161,10 +161,6 @@ void retriveRecord( int sock )
   // Now do the actual writing of the data out to the socket.
   write( sock, (char*) &findRecord, sizeof(findRecord.command) + sizeof(findRecord.id) );
 
-  cout << "DEBUG: " << endl;
-  cout << "\t command: " << findRecord.command << endl;  
-  cout << "\t id: " << findRecord.id << endl;  
-
   record_t resultRec;
   bzero( &resultRec, sizeof( resultRec ) );
 
@@ -205,7 +201,7 @@ int main( int argc, char** argv )
     int port = atoi( argv[PORTNUM] );
 
     // Validate the given port number
-    if ( port < PORT_MIN || port > PORT_MAX )
+    if ( port < PORT_MIN or port > PORT_MAX )
     {
       cerr << port << ": invalid port number" << endl;
       exit( EXIT_FAILURE );
@@ -236,6 +232,10 @@ int main( int argc, char** argv )
         close( sock );
         break;
       }
+			else
+			{
+				cout << "Illegal command " << cmd << endl;
+			}
     }
   }
   return EXIT_SUCCESS;
