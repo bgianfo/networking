@@ -17,6 +17,7 @@
 #include <map>
   using std::map;
 
+// Utilities and Error checking
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -52,6 +53,9 @@ typedef struct
 
 // Global variable tracking thread count
 int threadCount;
+
+// Global variable tracking currently runnig thread count
+int runingThreads;
 
 // Mutex for the concurrent modification of threadCount
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -150,7 +154,7 @@ bool getRecord( record_t rec, int sock )
  *
  * @return EXIT_SUCCESS
  */
-void* handleClient( void* arg )
+void* handleRequest( void* arg )
 {
 
   sock_t* incoming = (sock_t*)arg; 
@@ -203,9 +207,8 @@ void* handleClient( void* arg )
 	cout << "======================================================" << endl;
  
   pthread_mutex_lock( &counterMutex );
-
-  threadCount--;
-  cout << "Total # of threads running at this time is " << threadCount << endl;
+  runingThreads--;
+  cout << "Total # of threads running at this time is " << runingThreads << endl;
 
   pthread_mutex_unlock( &counterMutex );
 
@@ -217,6 +220,14 @@ void* handleClient( void* arg )
   return EXIT_SUCCESS;
 }
 
+/**
+ * Setup a socket, bind it to the local address then
+ * setup it up to listen for incoming connections.
+ *
+ * @param[in] port - The port number to listen on.
+ *
+ * @return The completely setup socket
+ */
 int setupSocket( int port )
 {
   //
@@ -288,13 +299,13 @@ int main( int argc, char **argv )
     exit( EXIT_FAILURE );
   }
 
-
-	// Setup a TCP socket to listen for connections.
+  // Setup a TCP socket to listen for connections.
   int sock = setupSocket( port );
 
-	cout << "MAIN THREAD - WAITING FOR THE FIRST CONNECTION FROM CLIENT ..." << endl;
+  cout << "MAIN THREAD - WAITING FOR THE FIRST CONNECTION FROM CLIENT ..." << endl;
 
   threadCount = 0;
+  runingThreads = 0;
 
   //
   // Now start serving clients
@@ -319,16 +330,17 @@ int main( int argc, char **argv )
 
     pthread_mutex_lock( &counterMutex );
     incoming->threadnum = ++threadCount;
+    runingThreads++;
     pthread_mutex_unlock( &counterMutex );
 
-    pthread_t childThread;
 
-		cout << "NEW THREAD CREATED: NO. " << threadCount  << endl;
+    cout << "NEW THREAD CREATED: NO. " << threadCount  << endl;
 
     // Create a thread to handle this connection.
-    pthread_create( &childThread, NULL, handleClient, (void*)incoming ); 
+    pthread_t thread;
+    pthread_create( &thread, NULL, handleRequest, (void*)incoming );
 
-		cout << "MAIN THREAD - WAITING FOR THE NEXT CONNECTION FROM CLIENT ..." << endl;
+    cout << "MAIN THREAD - WAITING FOR THE NEXT CONNECTION FROM CLIENT ..." << endl;
   }
   return EXIT_SUCCESS;
 }
