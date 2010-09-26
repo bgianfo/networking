@@ -50,9 +50,17 @@ typedef struct
 // Global variables used to track program state across threads.
 //
 
-int threadCount; // Global variable tracking thread count
+// Global variable tracking thread count
+int threadCount;
 
-map<int,record_t> database; // Our "database" of records
+// Mutex for the concurrent modification of threadCount
+pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Our "database" of records
+map<int,record_t> database;
+
+// Mutex for concurrent modification of the database.
+pthread_mutex_t databaseMutex = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * Try to add a given record to the database.
@@ -64,11 +72,12 @@ map<int,record_t> database; // Our "database" of records
  */
 bool addRecord( record_t rec, int sock )
 {
-
   record_t response;
   bzero( &response, sizeof( response ) );
 
-	bool exists = database.find( rec.id ) != database.end() ;
+  pthread_mutex_lock( &databaseMutex );
+  bool exists = database.find( rec.id ) != database.end() ;
+  pthread_mutex_unlock( &databaseMutex );
 
   if ( exists )
   {
@@ -78,7 +87,10 @@ bool addRecord( record_t rec, int sock )
   else
   {
     // Insert the new record
+    pthread_mutex_lock( &databaseMutex );
     database[rec.id] =  rec;
+    pthread_mutex_unlock( &databaseMutex );
+
     response.command = ADD_SUCCESS;
     response.id = rec.id;
     cout << "Adding record" << endl;
@@ -106,11 +118,16 @@ bool getRecord( record_t rec, int sock )
 	record_t result;
   bzero( &result, sizeof( result ) );
 
-	bool found = database.find( rec.id ) != database.end();
+  pthread_mutex_lock( &databaseMutex );
+  bool found = database.find( rec.id ) != database.end();
+  pthread_mutex_unlock( &databaseMutex );
 
   if ( found )
   {
+    pthread_mutex_lock( &databaseMutex );
     result = database[rec.id];
+    pthread_mutex_unlock( &databaseMutex );
+
     result.command = RET_SUCCESS;
     cout << "Record ID " << rec.id << " found." << endl;
   }
@@ -184,13 +201,16 @@ void* handleClient( void* arg )
 			 << ", Port: " <<  ntohs( incoming->address->sin_port ) << ":"
 			 << " ... client closed the socket" << endl;
 	cout << "======================================================" << endl;
+ 
+  pthread_mutex_lock( &counterMutex );
 
   threadCount--;
+  cout << "Total # of threads running at this time is " << threadCount << endl;
+
+  pthread_mutex_unlock( &counterMutex );
 
 	delete incoming->address;
 	delete incoming;
-
-	cout << "Total # of threads running at this time is " << threadCount << endl;
 
   pthread_exit( static_cast<void*>( EXIT_SUCCESS ) );
 
@@ -287,7 +307,9 @@ int main( int argc, char **argv )
       exit( EXIT_FAILURE );
     }
 
+    pthread_mutex_lock( &counterMutex );
     incoming->threadnum = ++threadCount;
+    pthread_mutex_unlock( &counterMutex );
 
     pthread_t childThread;
 
