@@ -217,35 +217,8 @@ void* handleClient( void* arg )
   return EXIT_SUCCESS;
 }
 
-/**
- * Program entry point.
- *
- * @param[in] argc - The number of command line arguments.
- * @param[in] argv - The actual command line arguments.
- *
- * @return EXIT_SUCCESS on success, EXIT_FAILURE on failure.
- */
-int main( int argc, char **argv )
+int setupSocket( int port )
 {
-  //
-  // Make sure that the port argument was given
-  //
-  if ( argc != 2 )
-  {
-    cerr << "Usage: " << argv[0] << " port" << endl;
-    exit( EXIT_FAILURE );
-  }
-
-  //
-  // Get the port number, and make sure that it is legitimate
-  //
-  int port = atoi( argv[ 1 ] );
-  if ( port < PORT_MIN || port > PORT_MAX )
-  {
-    cerr << port << ": invalid port number" << endl;
-    exit( EXIT_FAILURE );
-  }
-
   //
   // Create a TCP socket.
   //
@@ -281,6 +254,43 @@ int main( int argc, char **argv )
     cerr << "Listen: " << strerror( errno ) << endl;
     exit( EXIT_FAILURE );
   }
+
+  return sock;
+}
+
+
+/**
+ * Program entry point.
+ *
+ * @param[in] argc - The number of command line arguments.
+ * @param[in] argv - The actual command line arguments.
+ *
+ * @return EXIT_SUCCESS on success, EXIT_FAILURE on failure.
+ */
+int main( int argc, char **argv )
+{
+  //
+  // Make sure that the port argument was given
+  //
+  if ( argc != 2 )
+  {
+    cerr << "Usage: " << argv[0] << " port" << endl;
+    exit( EXIT_FAILURE );
+  }
+
+  //
+  // Get the port number, and make sure that it is legitimate
+  //
+  int port = atoi( argv[ 1 ] );
+  if ( port < PORT_MIN || port > PORT_MAX )
+  {
+    cerr << port << ": invalid port number" << endl;
+    exit( EXIT_FAILURE );
+  }
+
+
+	// Setup a TCP socket to listen for connections.
+  int sock = setupSocket( port );
 
 	cout << "MAIN THREAD - WAITING FOR THE FIRST CONNECTION FROM CLIENT ..." << endl;
 
