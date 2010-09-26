@@ -18,10 +18,10 @@
 
 // Utilities, IO and Error checking
 #include <errno.h>
-#include <stdlib.h>
 #include <unistd.h>
-#include <strings.h> // for bzero(..)
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h> // for bzero(..)
 
 // Networking and sockets
 #include <sys/types.h>
@@ -29,6 +29,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+// Project specific header
 #include "common.h"
 
 /**
