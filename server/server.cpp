@@ -2,7 +2,7 @@
  * Author: Brian Gianforcaro ( bjg1955@cs.rit.edu )
  *
  * Description: A server appiication that takes remote commands
- * to add, retrive records from a "database". 
+ * to add, retrieve records from a "database". 
  *
  * Usage: tcp-project2 port
  * 				
@@ -178,7 +178,7 @@ void* handleRequest( void* arg )
       case add_t:
         addRecord( request, incoming->sock );
         break;
-      case retrive_t:
+      case retrieve_t:
         getRecord( request, incoming->sock );
         break;
       default:

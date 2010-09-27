@@ -1,7 +1,7 @@
 /**
  * Author: Brian Gianforcaro ( bjg1955@cs.rit.edu )
  *
- * Description: A client appiication that can add, retrive
+ * Description: A client appiication that can add, retrieve
  * records from a remote database server. 
  *
  * Usage: tcp-project1 hostname port
@@ -144,16 +144,16 @@ void addRecord( int sock )
 
 
 /**
- * Attempt to retrive a record from the remote database.
+ * Attempt to retrieve a record from the remote database.
  *
  * @param[in] sock - The socket's file descriptor
  */
-void retriveRecord( int sock )
+void retrieveRecord( int sock )
 {
   record_t findRecord;
   bzero( &findRecord, sizeof( findRecord ) );
 
-  findRecord.command = retrive_t;
+  findRecord.command = retrieve_t;
   findRecord.id = 0;
 
   cout << "Enter id (interger):";
@@ -213,8 +213,8 @@ int main( int argc, char** argv )
     while ( true )	
     {
 
-      cout << "Enter command (" << add_t << " for Add, " << retrive_t 
-           << " for Retrive, " << quit_t << " to quit):"; 
+      cout << "Enter command (" << add_t << " for Add, " << retrieve_t 
+           << " for retrieve, " << quit_t << " to quit):"; 
 
       int cmd = 100; 
       scanf( "%d", &cmd );
@@ -223,9 +223,9 @@ int main( int argc, char** argv )
       {
         addRecord( sock );
       }
-      else if ( cmd == retrive_t )
+      else if ( cmd == retrieve_t )
       {
-        retriveRecord( sock );
+        retrieveRecord( sock );
       }
       else if ( cmd == quit_t )
       {
@@ -233,10 +233,10 @@ int main( int argc, char** argv )
         close( sock );
         break;
       }
-			else
-			{
-				cout << "Illegal command " << cmd << endl;
-			}
+      else
+      {
+        cout << "Illegal command " << cmd << endl;
+      }
     }
   }
   return EXIT_SUCCESS;
