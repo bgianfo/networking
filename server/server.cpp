@@ -41,8 +41,8 @@
  */
 typedef struct 
 {
-	int sock;
-	int threadnum;
+  int sock;
+  int threadnum;
   sockaddr_in* address;
   socklen_t addressLen;
 } sock_t;
@@ -119,7 +119,7 @@ bool addRecord( record_t rec, int sock )
 bool getRecord( record_t rec, int sock )
 {
 
-	record_t result;
+  record_t result;
   bzero( &result, sizeof( result ) );
 
   pthread_mutex_lock( &databaseMutex );
@@ -138,7 +138,7 @@ bool getRecord( record_t rec, int sock )
   else
   {
     result.command = RET_FAILURE;
-		result.id = rec.id;
+    result.id = rec.id;
     cout << "Record ID " << rec.id << " not found." << endl;
   }
 
@@ -160,17 +160,16 @@ void* handleRequest( void* arg )
   sock_t* incoming = (sock_t*)arg; 
 
   cout << "Entering Thread # " << (int)incoming->threadnum
-       << " Client IP: " << inet_ntoa( incoming->address->sin_addr ) 
-			 << ", Port: " <<  ntohs( incoming->address->sin_port ) << ":" << endl; 
-	cout << "======================================================" << endl;
+       << " Client IP: " << inet_ntoa( incoming->address->sin_addr )
+       << ", Port: " <<  ntohs( incoming->address->sin_port ) << ":" << endl;
+  cout << "======================================================" << endl;
 
-  int len; 
+  int len;
   record_t request;
   while ( ( len = read( incoming->sock, &request, sizeof( request ) ) ) > 0 )
   {
-
-		cout << "Received " << len << " bytes from the socket " << endl;
-		cout << "Command: " << request.command << endl;
+    cout << "Received " << len << " bytes from the socket " << endl;
+    cout << "Command: " << request.command << endl;
     //
     // Perform the actual action requested
     //
@@ -202,18 +201,19 @@ void* handleRequest( void* arg )
  
   cout << "Exiting Thread # " << incoming->threadnum
        << " Client IP: " << inet_ntoa( incoming->address->sin_addr ) 
-			 << ", Port: " <<  ntohs( incoming->address->sin_port ) << ":"
-			 << " ... client closed the socket" << endl;
-	cout << "======================================================" << endl;
+       << ", Port: " <<  ntohs( incoming->address->sin_port ) << ":"
+       << " ... client closed the socket" << endl;
+  cout << "======================================================" << endl;
  
   pthread_mutex_lock( &counterMutex );
+
   runingThreads--;
   cout << "Total # of threads running at this time is " << runingThreads << endl;
 
   pthread_mutex_unlock( &counterMutex );
 
-	delete incoming->address;
-	delete incoming;
+  delete incoming->address;
+  delete incoming;
 
   pthread_exit( static_cast<void*>( EXIT_SUCCESS ) );
 
@@ -240,9 +240,9 @@ int setupSocket( int port )
     exit( EXIT_FAILURE );
   }
 
-	//
+  //
   // Fill in the struct with the port number given by the user.
-	//
+  //
   struct sockaddr_in server;
   bzero( &server, sizeof( server ) );
   server.sin_family = AF_INET;
@@ -313,14 +313,13 @@ int main( int argc, char **argv )
   while ( true )
   {
 
-		sock_t* incoming = new sock_t;
-		incoming->address = new struct sockaddr_in;
-		incoming->addressLen = sizeof( struct sockaddr_in ); 
+    sock_t* incoming = new sock_t;
+    incoming->address = new struct sockaddr_in;
+    incoming->addressLen = sizeof( struct sockaddr_in );
 
-		// Wait for any new connections.
-    incoming->sock = accept( sock,
-				                     (struct sockaddr*)incoming->address,
-							 							 &(incoming->addressLen) ); 
+    // Wait for any new connections.
+    incoming->sock = accept( sock, (struct sockaddr*)incoming->address,
+                             &(incoming->addressLen) );
 
     if ( incoming->sock < 0 )
     {
