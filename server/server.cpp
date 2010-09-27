@@ -101,7 +101,7 @@ bool addRecord( record_t rec, int sock )
     cout << "ID: " << rec.id << endl;
     cout << "Name: " << rec.name << endl;
     cout << "Age: " << rec.age << endl;
-		cout << "Size of the database: " << database.size() << endl;
+    cout << "Size of the database: " << database.size() << endl;
   }
 
   write( sock, &response, sizeof( response ) );
