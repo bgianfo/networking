@@ -2,10 +2,10 @@
  * Author: Brian Gianforcaro ( bjg1955@cs.rit.edu )
  *
  * Description: A server appiication that takes remote commands
- * to add, retrieve records from a "database". 
+ * to add, retrieve records from a "database".
  *
  * Usage: tcp-project2 port
- * 				
+ *
  * Where 'port' is the port number the server is listening on.
  */
 
@@ -19,8 +19,10 @@
 
 // Utilities and Error checking
 #include <errno.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>  // for strerror(..)
 #include <strings.h> // for bzero(..)
 
 // Networking and sockets
@@ -39,7 +41,7 @@
  * Data structure to use when passing different data
  * members to a new connection handler thread.
  */
-typedef struct 
+typedef struct
 {
   int sock;
   int threadnum;
@@ -52,10 +54,10 @@ typedef struct
 //
 
 // Global variable tracking thread count
-int threadCount;
+int threadCount = 0;
 
 // Global variable tracking currently runnig thread count
-int runingThreads;
+int runingThreads = 0;
 
 // Mutex for the concurrent modification of threadCount
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -149,7 +151,7 @@ bool getRecord( record_t rec, int sock )
 /**
  * Threading function to respond to a incoming client request.
  *
- * @param[in] arg - The socket file descriptor, casted to a void* 
+ * @param[in] arg - The socket information, casted to a void*
  * in order to work with the threading library.
  *
  * @return EXIT_SUCCESS
@@ -157,7 +159,7 @@ bool getRecord( record_t rec, int sock )
 void* handleRequest( void* arg )
 {
 
-  sock_t* incoming = (sock_t*)arg; 
+  sock_t* incoming = (sock_t*)arg;
 
   cout << "Entering Thread # " << (int)incoming->threadnum
        << " Client IP: " << inet_ntoa( incoming->address->sin_addr )
@@ -194,17 +196,17 @@ void* handleRequest( void* arg )
   shutdown( incoming->sock, SHUT_RDWR );
 
   //
-  // Close the socket and exit this thread 
+  // Close the socket and exit this thread
   //
   close( incoming->sock );
 
- 
+
   cout << "Exiting Thread # " << incoming->threadnum
-       << " Client IP: " << inet_ntoa( incoming->address->sin_addr ) 
+       << " Client IP: " << inet_ntoa( incoming->address->sin_addr )
        << ", Port: " <<  ntohs( incoming->address->sin_port ) << ":"
        << " ... client closed the socket" << endl;
   cout << "======================================================" << endl;
- 
+
   pthread_mutex_lock( &counterMutex );
 
   runingThreads--;
@@ -302,7 +304,9 @@ int main( int argc, char **argv )
   // Setup a TCP socket to listen for connections.
   int sock = setupSocket( port );
 
-  cout << "MAIN THREAD - WAITING FOR THE FIRST CONNECTION FROM CLIENT ..." << endl;
+  cout << "MAIN THREAD - "
+       << "WAITING FOR THE FIRST CONNECTION FROM CLIENT ..."
+       << endl;
 
   threadCount = 0;
   runingThreads = 0;
@@ -323,7 +327,7 @@ int main( int argc, char **argv )
 
     if ( incoming->sock < 0 )
     {
-      cerr << "Server: accept error" << endl; 
+      cerr << "Server: accept error" << endl;
       exit( EXIT_FAILURE );
     }
 
@@ -339,7 +343,9 @@ int main( int argc, char **argv )
     pthread_t thread;
     pthread_create( &thread, NULL, handleRequest, (void*)incoming );
 
-    cout << "MAIN THREAD - WAITING FOR THE NEXT CONNECTION FROM CLIENT ..." << endl;
+    cout << "MAIN THREAD - "
+         << "WAITING FOR THE NEXT CONNECTION FROM CLIENT ..."
+         << endl;
   }
   return EXIT_SUCCESS;
 }

@@ -2,10 +2,10 @@
  * Author: Brian Gianforcaro ( bjg1955@cs.rit.edu )
  *
  * Description: A client appiication that can add, retrieve
- * records from a remote database server. 
+ * records from a remote database server.
  *
  * Usage: tcp-project1 hostname port
- * 				
+ *
  * Where 'hostname' is the name of the remote host on which
  * the server is running and 'port' is the port number it is using.
  */
@@ -16,7 +16,11 @@
   using std::cerr;
   using std::endl;
 
+#include <string>
+  using std::string;
+
 // Utilities, IO and Error checking
+#include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -38,7 +42,7 @@
  * @param[in] hostname - The hostname to use when connecting.
  * @param[in] port - The port number to use when connecting.
  *
- * @return A file descriptor to the setup and connected socket. 
+ * @return A file descriptor to the setup and connected socket.
  */
 int setupSocket( char* hostname, int port )
 {
@@ -85,8 +89,13 @@ void usage( char* binary )
   cerr << "Usage: " << binary << " hostname port " << endl;
 }
 
-
-int obtainInt( char* msg )
+/**
+ * Attempt to get an integer input from the user.
+ *
+ * @param[in] msg - The error message to display on bad input
+ * @return the actual value we have received.
+ */
+int obtainInt( string msg )
 {
   int value = 0;
   bool valid = false;
@@ -132,14 +141,17 @@ void addRecord( int sock )
 
   read( sock, (char*) &resultRec, sizeof(resultRec.command) );
 
-  if ( resultRec.command == ADD_SUCCESS )
+  string response;
+  if ( ADD_SUCCESS == resultRec.command )
   {
-    cout << "ID " << newRecord.id << " added successfully" << endl;
+    response = " added successfully";
   }
   else
   {
-    cout << "ID " << newRecord.id << " already exists" << endl;
+    response = " already exists";
   }
+
+  cout << "ID " << newRecord.id << response << endl;
 }
 
 
