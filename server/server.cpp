@@ -2,7 +2,7 @@
  * Author: Brian Gianforcaro ( bjg1955@cs.rit.edu )
  *
  * Description: A server appiication that takes remote commands
- * to add, retrive records from a "database". 
+ * to add, retrieve records from a "database". 
  *
  * Usage: tcp-project2 port
  * 				
@@ -54,7 +54,7 @@ typedef struct
 // Global variable tracking thread count
 int threadCount;
 
-// Global variable tracking currently runnig thread count
+// Global variable tracking currently running thread count
 int runingThreads;
 
 // Mutex for the concurrent modification of threadCount
