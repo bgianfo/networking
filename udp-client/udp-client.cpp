@@ -47,83 +47,7 @@ typedef struct
   socklen_t addrlen; 
 } sock_t;
 
-
-/**
- * 
- */
-bool sendgram( sock_t s, Datagram* gram )
-{
-
-  int tryCount = 0;
-  int waitTime = 10;
-  int len = 0;
-
-  if ( gram->type == ACK || gram->type == SYN || gram->type == FIN )
-  {
-    len = sizeof( gram->type ) + sizeof( gram->seq );
-  }
-  else if ( gram->type == DATA )
-  {
-    len = sizeof( Datagram );
-  }
-
-  gram->seq = s.seq;
-
-  cerr << "Sending Packet" << endl;
-  cerr << "Type: " << gram->type << endl;
-  sendto( s.sock, gram, len, 0,
-          (struct sockaddr*) &(s.address),
-          sizeof( struct sockaddr ) );
-
-  while ( tryCount < 6 )
-  {
-    bool timerExpired = false;
-    start_timer( waitTime, timerExpired );
-
-    while ( true )
-    {
-      Datagram response;
-
-      tryAgain:
-        cerr << "Trying to receive" << endl;
-	if ( recvfrom( s.sock, &response, sizeof( response ), 0,
-                       (struct sockaddr*) &(s.address),
-	               &(s.addrlen) ) < 0 ) 
-	{
-	  if ( response.type == ACK )
-	  {
-	    stop_timer();
-    	    cerr << "Recived ACK" << endl;
-   	    return true;
-	  }
-    	  cerr << "Recived non - ACK" << endl;
- 	  cerr << "Type: " << response.type << endl;
-	}
-	else
- 	{	
-	  if ( errno == EINTR )
-	  {
-	    goto tryAgain;
-	  }
-	  perror("recv: ");
-	}
-
-        if ( timerExpired )
-	{
-            cerr << "Timer expired, try # " << tryCount << endl;
-   	    tryCount++;
-  	    break;
-	}
-    }
-
-    stop_timer();
-    cerr << "Resending Packet" << endl;
-    sendto( s.sock, gram, sizeof( Datagram ), 0,
-            (struct sockaddr*) &(s.address),
-	    sizeof( struct sockaddr ) );
-  }
-  return false;
-}
+#define TIME_OUT 3
 
 /**
  * Setup the connection to the server and return the sockets file descriptor.
@@ -159,13 +83,38 @@ sock_t setupSocket( char* hostname, int port )
   s.address.sin_port = htons( port );
   s.address.sin_addr.s_addr = *(u_long *)hostent->h_addr;
   s.addrlen = sizeof( struct sockaddr );
+	s.seq = 0;
 
   Datagram gram;
   bzero( &gram, sizeof( gram ) );
-  gram.type = SYN;
-  sendgram( s, &gram );
+	gram.type = SYN;
 
-  return s;
+	bool timedOut;
+	int timeOuts = 0;
+
+	do {
+		sendto( s.sock, (char *)&gram, 8, 0, (struct sockaddr *)&s.address, s.addrlen );
+
+		timedOut = false;
+
+		start_timer( TIME_OUT, timedOut );
+		recvfrom( s.sock, (char *)&gram, sizeof( gram ), 0, (struct sockaddr *)&s.address, &s.addrlen );
+		stop_timer();
+
+		if ( timedOut )
+		{
+			cout << "Connection time out #" << ++timeOuts << endl;
+			
+			if ( timeOuts > 5 ) 
+			{
+				cout << "Connection failed. Exiting..." << endl;
+				close( s.sock );
+				exit(EXIT_FAILURE);
+			}
+		}
+	} while( timedOut );
+
+	return s;
 }
 
 /**
@@ -203,8 +152,9 @@ int obtainInt( string msg )
  *
  * @param[in] sock - The socket's file descriptor
  */
-void addRecord( sock_t sock )
+void addRecord( sock_t& sock )
 {
+  Datagram gram;
   record_t newRecord;
   newRecord.command = add_t;
 
@@ -217,74 +167,113 @@ void addRecord( sock_t sock )
   cout << "Enter age (integer):";
   newRecord.age = obtainInt( "Age should be a non-zero integer):" );
 
-  Datagram gram;
   bzero( &gram, sizeof( Datagram ) );
   gram.type = DATA;
   gram.seq = sock.seq;
   memcpy( gram.data, &newRecord, sizeof( record_t ) );
-  
-  cerr << "Sending Data" << endl;
-  sendgram( sock, &gram );
-
-  Datagram resultDgram;
+ 	
   record_t resultRec;
-  bzero( &resultDgram, sizeof( resultDgram ) );
-  bzero( &resultRec, sizeof( resultRec ) );
 
-  // Get the result back from the server
-  getAddData:
+	bool timedOut;
+	int timeOuts = 0;
+  struct sockaddr_in address;
+	struct sockaddr* addr = (struct sockaddr*) &address;
+	socklen_t len = sizeof( address );
 
-    cerr << "Trying to receive Data" << endl;
-    if ( recvfrom( sock.sock, &resultDgram, sizeof( resultDgram ), 0,
-                   (struct sockaddr*) &(sock.address),
-                   &(sock.addrlen) ) < 0 )
-    {
+	do
+	{
+		// Send add request
+		sendto( sock.sock, (char *)&gram, sizeof( Datagram ), 0,
+					  (struct sockaddr *)&sock.address, sock.addrlen );
+		timedOut = false;
+		start_timer( TIME_OUT, timedOut );
+		unsigned int seqCheck;
+	  bool finished = false;
+		do
+		{
+			// Receive ACK
+			recvfrom( sock.sock, (char *)&gram, sizeof(Datagram),0,
+			        	addr, &len );
 
-      if ( resultDgram.type == DATA && resultDgram.seq == sock.seq )
-      {
-        memcpy( &resultRec, resultDgram.data, sizeof( record_t ) );
+			seqCheck = gram.seq;
+			if ( seqCheck != sock.seq )
+			{
+				cout << "Incorrect Seq number recieved." << endl;
+			}
 
-        Datagram gram;
-        bzero( &gram, sizeof( Datagram ) );
-        gram.type = ACK;
-        gram.seq = sock.seq;
-        sendto( sock.sock, &gram, sizeof( gram.type ) + sizeof( gram.seq ), 0,
-                (struct sockaddr*) &(sock.address),
-                sizeof( struct sockaddr ) );
-        sock.seq++;
-      }
-      else
-      {
-        cerr << "Got wrong type" << endl;
-        goto getAddData;
+			if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+					 || sock.address.sin_port != address.sin_port )
+			{
+				cout << "Packet arrived fom an unexpected source, discarding." << endl;
+				finished = false;
+			}
+			else
+			{
+				finished = true;
+			}
 
-      }
-    }
-    else
-    {
-        cerr << "Error trying to receive" << endl;
-        goto getAddData;
-    }
-              
+		}
+		while ( seqCheck != sock.seq || not finished );
+		stop_timer();
+
+		if ( timedOut )
+		{
+			cout << "Add request time out #" << ++timeOuts << endl;
 	
+			if ( timeOuts > 5 )
+			{
+				cout << "Add request timed out..." << endl;
+			}
+		} 
+	}
+	while( timedOut && timeOuts < 5 );
 
-  if ( resultRec.command == ADD_SUCCESS )
-  {
-    cout << "ID " << newRecord.id << " added successfully" << endl;
-  }
-  else
-  {
-    cout << "ID " << newRecord.id << " already exists" << endl;
-  }
+	if ( not timedOut )
+	{
+	  tryAddAck:
+		// Receive success/failure
+		recvfrom( sock.sock, (char *)&gram, sizeof(gram), 0,
+				      addr, &len );
+
+		if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+				 || sock.address.sin_port != address.sin_port )
+		{
+			cout << "Packet arrived fom an unexpected source, discarding." << endl;
+			goto tryAddAck;
+		}
+
+
+
+		memcpy( &resultRec, gram.data, sizeof( record_t ) );
+
+		if ( resultRec.command == ADD_SUCCESS )
+		{
+			cout << "ID " << newRecord.id << " added successfully" << endl;
+		}
+		else
+		{
+      cout << "ID " << newRecord.id << " already exists" << endl;
+		}
+ 
+		// Send ACK
+		gram.type = ACK;
+		gram.seq = sock.seq;
+		sendto( sock.sock, (char *)&gram, 8, 0,
+				    (struct sockaddr *)&sock.address,
+						sock.addrlen );
+
+		// Update Sequence Number
+		++(sock.seq);
+		cout << "Add: Incremented sequence#" << sock.seq << endl;
+	}
 }
 
-
 /**
- * Attempt to retrive a record from the remote database.
+ * Attempt to retrieve a record from the remote database.
  *
  * @param[in] sock - The socket's file descriptor
  */
-void retriveRecord( sock_t sock )
+void retriveRecord( sock_t& sock )
 {
   record_t findRecord;
   bzero( &findRecord, sizeof( findRecord ) );
@@ -298,48 +287,106 @@ void retriveRecord( sock_t sock )
   Datagram gram;
   bzero( &gram, sizeof( Datagram ) );
   gram.type = DATA;
-  gram.seq = 0;
-  memcpy( gram.data, &findRecord, sizeof( record_t ) );
-  sendgram( sock, &gram );
-
-
-  // Now do the actual writing of the data out to the socket.
-  // write( sock, (char*) &findRecord, sizeof(findRecord.command) + sizeof(findRecord.id) );
+  gram.seq = sock.seq;
+  memcpy( gram.data, &findRecord, sizeof( findRecord ) );
 
   record_t resultRec;
   bzero( &resultRec, sizeof( resultRec ) );
 
-  // Get the result back from the server
-  getRecord:
+	bool timedOut;
+	int timeOuts = 0;
+  struct sockaddr_in address;
+	struct sockaddr* addr = (struct sockaddr*) &address;
+	socklen_t len = sizeof( address );
 
-  cerr << "Trying to receive" << endl;
-  if ( recv( sock.sock, &gram, sizeof( Datagram ), 0 ) < 0 )
-  {
-    Datagram gram2;
-    bzero( &gram2, sizeof( Datagram ) );
-    gram.type = ACK;
-    sendto( sock.sock, &gram2, sizeof( Datagram ), 0,
-            (struct sockaddr*) &(sock.address),
-            sizeof( struct sockaddr ) );
-    sock.seq++;
-  }
-  else
-  {
-    cerr << "Error trying to receive" << endl;
-    goto getRecord;
-  }
-			
-  // Display our results
-  if ( resultRec.command == RET_SUCCESS )
-  {
-    cout << "ID: " << resultRec.id << endl;
-    cout << "Name: " << resultRec.name << endl;
-    cout << "Age: " << resultRec.age << endl;
-  }
-  else
-  {
-    cout << "ID " << findRecord.id << " does not exist" << endl;
-  }
+	do
+	{
+		// Send add request
+		sendto( sock.sock, &gram, sizeof( Datagram ), 0,
+					  (struct sockaddr *)&sock.address, sock.addrlen );
+		timedOut = false;
+		start_timer( TIME_OUT, timedOut );
+		unsigned int seqCheck;
+
+		bool finished = false;
+		do
+		{
+			// Receive ACK
+			recvfrom( sock.sock, (char *)&gram, sizeof(gram),0,
+			        	addr, &len );
+
+			seqCheck = gram.seq;
+			if ( seqCheck != sock.seq )
+			{
+				cout << "Incorrect Seq number received." << endl;
+			}
+
+			if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+					 || sock.address.sin_port != address.sin_port )
+			{
+				cout << "Packet arrived fom an unexpected source, discarding." << endl;
+				finished = false;
+			}
+			else
+			{
+				finished = true;
+			}
+
+		}
+		while( seqCheck != sock.seq || not finished );
+		stop_timer();
+
+		if ( timedOut )
+		{
+			cout << "Retrieve request time out #" << ++timeOuts << endl;
+	
+			if ( timeOuts > 5 )
+			{
+				cout << "Retrieve request timed out..." << endl;
+			}
+		} 
+	}
+	while( timedOut && timeOuts < 5 );
+
+	if ( not timedOut )
+	{
+    retryGet:
+		// Receive success/failure
+		recvfrom( sock.sock, (char *)&gram, sizeof(gram), 0,
+			       	addr, &len );
+
+		if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+				 || sock.address.sin_port != address.sin_port )
+		{
+			cout << "Packet arrived fom an unexpected source, discarding." << endl;
+			goto retryGet;
+		}
+
+		memcpy( &resultRec, gram.data, sizeof( record_t ) );
+
+		// Display our results
+		if ( resultRec.command == RET_SUCCESS )
+		{
+			cout << "ID: " << resultRec.id << endl;
+			cout << "Name: " << resultRec.name << endl;
+			cout << "Age: " << resultRec.age << endl;
+		}
+		else
+		{
+			cout << "ID " << findRecord.id << " does not exist" << endl;
+		}
+ 
+		// Send ACK
+		gram.type = ACK;
+		gram.seq = sock.seq;
+		sendto( sock.sock, (char *)&gram, 8, 0,
+				    (struct sockaddr *)&sock.address,
+						sock.addrlen );
+
+		// Update Sequence Number
+		++(sock.seq);
+		cout << "Ret: Incremented sequence# " << sock.seq << endl;
+	}
 }
 
 
@@ -393,7 +440,8 @@ int main( int argc, char** argv )
         Datagram gram;
         bzero( &gram, sizeof( Datagram ) );
         gram.type = FIN;
-        sendgram( sock, &gram );
+				gram.seq = sock.seq;
+			  sendto( sock.sock, (char *)&gram, 8, 0, (struct sockaddr *)&sock.address, sock.addrlen );
         close( sock.sock );
         break;
       }
