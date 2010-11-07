@@ -5,7 +5,6 @@
 //		for more details.
 //
 
-static	char	sccs_id[] = "@(#)Timer.C	1.1	10/03/01";
 
 #include "Timer.h"
 #include <unistd.h>

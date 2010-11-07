@@ -42,11 +42,11 @@
 typedef struct
 { 
   int sock; 
-	struct sockaddr_in address;
+  unsigned int seq;
+  struct sockaddr_in address;
+  socklen_t addrlen; 
 } sock_t;
 
-
-int globalSeq = 0;
 
 /**
  * 
@@ -54,82 +54,75 @@ int globalSeq = 0;
 bool sendgram( sock_t s, Datagram* gram )
 {
 
-	int tryCount;
-	bool received;
+  int tryCount = 0;
   int waitTime = 10;
+  int len = 0;
 
-
-	int len = 0;
-
-	if ( gram->type == ACK || gram->type == SYN || gram->type == FIN )
-	{
-		len = sizeof( gram->type ) + sizeof( gram->seq );
-	}
-	else if ( gram->type == DATA )
+  if ( gram->type == ACK || gram->type == SYN || gram->type == FIN )
   {
-		len = sizeof( Datagram );
-	}
-	gram->seq = globalSeq;
+    len = sizeof( gram->type ) + sizeof( gram->seq );
+  }
+  else if ( gram->type == DATA )
+  {
+    len = sizeof( Datagram );
+  }
+
+  gram->seq = s.seq;
 
   cerr << "Sending Packet" << endl;
-	cerr << "Type: " << gram->type << endl;
-	sendto( s.sock, gram, len,
-			    0, (struct sockaddr*) &(s.address),
-					sizeof( struct sockaddr ) );
+  cerr << "Type: " << gram->type << endl;
+  sendto( s.sock, gram, len, 0,
+          (struct sockaddr*) &(s.address),
+          sizeof( struct sockaddr ) );
 
-	tryCount = 0;
-	received = false;
-	while ( tryCount < 6 )
+  while ( tryCount < 6 )
+  {
+    bool timerExpired = false;
+    start_timer( waitTime, timerExpired );
+
+    while ( true )
+    {
+      Datagram response;
+
+      tryAgain:
+        cerr << "Trying to receive" << endl;
+	if ( recvfrom( s.sock, &response, sizeof( response ), 0,
+                       (struct sockaddr*) &(s.address),
+	               &(s.addrlen) ) < 0 ) 
 	{
-
-		bool timerExpired = false;
-		start_timer( waitTime, timerExpired );
-
-		while ( true )
-		{
-			Datagram response;
-
-    tryAgain:
-			cerr << "Trying to receive" << endl;
-			if ( recv( s.sock, &response, sizeof( response ), 0 ) < 0 )
-			{
-				if ( response.type == ACK )
-				{
-					stop_timer();
-    			cerr << "Recived ACK" << endl;
-					return true;
-				}
-
+	  if ( response.type == ACK )
+	  {
+	    stop_timer();
+    	    cerr << "Recived ACK" << endl;
+   	    return true;
+	  }
     	  cerr << "Recived non - ACK" << endl;
-				cerr << "Type: " << response.type << endl;
-			}
-			else
- 		  {	
-				if ( errno == EINTR )
-				{
-					goto tryAgain;
-				}
-				perror("recv: ");
-			}
-
-			if ( timerExpired )
-			{
-				cerr << "Timer expired, try # " << tryCount << endl;
-				tryCount++;
-				break;
-			}
-		}
-
-		stop_timer();
-		cerr << "Resending Packet" << endl;
- 	  sendto( s.sock, gram, sizeof( Datagram ),
-			    0, (struct sockaddr*) &(s.address),
-					sizeof( struct sockaddr ) );
-
-
+ 	  cerr << "Type: " << response.type << endl;
+	}
+	else
+ 	{	
+	  if ( errno == EINTR )
+	  {
+	    goto tryAgain;
+	  }
+	  perror("recv: ");
 	}
 
-	return false;
+        if ( timerExpired )
+	{
+            cerr << "Timer expired, try # " << tryCount << endl;
+   	    tryCount++;
+  	    break;
+	}
+    }
+
+    stop_timer();
+    cerr << "Resending Packet" << endl;
+    sendto( s.sock, gram, sizeof( Datagram ), 0,
+            (struct sockaddr*) &(s.address),
+	    sizeof( struct sockaddr ) );
+  }
+  return false;
 }
 
 /**
@@ -142,8 +135,7 @@ bool sendgram( sock_t s, Datagram* gram )
  */
 sock_t setupSocket( char* hostname, int port )
 {
-
-	sock_t s;
+  sock_t s;
   bzero( &s, sizeof( sock_t ) );
 
   // Initialize a socket to work with
@@ -166,12 +158,12 @@ sock_t setupSocket( char* hostname, int port )
   s.address.sin_family = AF_INET;
   s.address.sin_port = htons( port );
   s.address.sin_addr.s_addr = *(u_long *)hostent->h_addr;
+  s.addrlen = sizeof( struct sockaddr );
 
-	Datagram gram;
+  Datagram gram;
   bzero( &gram, sizeof( gram ) );
-
-	gram.type = SYN;
-	sendgram( s, &gram );
+  gram.type = SYN;
+  sendgram( s, &gram );
 
   return s;
 }
@@ -225,53 +217,55 @@ void addRecord( sock_t sock )
   cout << "Enter age (integer):";
   newRecord.age = obtainInt( "Age should be a non-zero integer):" );
 
-	Datagram gram;
-	bzero( &gram, sizeof( Datagram ) );
-	gram.type = DATA;
-	gram.seq = globalSeq;
+  Datagram gram;
+  bzero( &gram, sizeof( Datagram ) );
+  gram.type = DATA;
+  gram.seq = sock.seq;
   memcpy( gram.data, &newRecord, sizeof( record_t ) );
   
-	cerr << "Sending Data" << endl;
-	sendgram( sock, &gram );
+  cerr << "Sending Data" << endl;
+  sendgram( sock, &gram );
 
-	Datagram resultDgram;
-  bzero( &resultDgram, sizeof( resultDgram ) );
-
+  Datagram resultDgram;
   record_t resultRec;
+  bzero( &resultDgram, sizeof( resultDgram ) );
   bzero( &resultRec, sizeof( resultRec ) );
 
   // Get the result back from the server
-getAddData:
+  getAddData:
 
-	cerr << "Trying to receive Data" << endl;
-	if ( recv( sock.sock, &resultDgram, sizeof( resultDgram ), 0 ) < 0 )
-	{
+    cerr << "Trying to receive Data" << endl;
+    if ( recvfrom( sock.sock, &resultDgram, sizeof( resultDgram ), 0,
+                   (struct sockaddr*) &(sock.address),
+                   &(sock.addrlen) ) < 0 )
+    {
 
-		if ( resultDgram.type == DATA )
-		{
-		  memcpy( &resultRec, resultDgram.data, sizeof( record_t ) );
-  
-		  Datagram gram;
-		  bzero( &gram, sizeof( Datagram ) );
-		  gram.type = ACK;
-		  gram.seq = globalSeq;
-	    sendto( sock.sock, &gram, sizeof( gram.type ) + sizeof( gram.seq ),
-	    			  0, (struct sockaddr*) &(sock.address),
-		  			  sizeof( struct sockaddr ) );
-		}
-		else
-		{
-		  cerr << "Got wrong type" << endl;
-		  goto getAddData;
+      if ( resultDgram.type == DATA && resultDgram.seq == sock.seq )
+      {
+        memcpy( &resultRec, resultDgram.data, sizeof( record_t ) );
 
-		}
-	}
-	else
-	{
-		cerr << "Error trying to receive" << endl;
-		goto getAddData;
-	}
-		
+        Datagram gram;
+        bzero( &gram, sizeof( Datagram ) );
+        gram.type = ACK;
+        gram.seq = sock.seq;
+        sendto( sock.sock, &gram, sizeof( gram.type ) + sizeof( gram.seq ), 0,
+                (struct sockaddr*) &(sock.address),
+                sizeof( struct sockaddr ) );
+        sock.seq++;
+      }
+      else
+      {
+        cerr << "Got wrong type" << endl;
+        goto getAddData;
+
+      }
+    }
+    else
+    {
+        cerr << "Error trying to receive" << endl;
+        goto getAddData;
+    }
+              
 	
 
   if ( resultRec.command == ADD_SUCCESS )
@@ -301,14 +295,12 @@ void retriveRecord( sock_t sock )
   cout << "Enter id (interger):";
   findRecord.id = obtainInt( "ID should be a non-zero integer):" );
 
-	Datagram gram;
-	bzero( &gram, sizeof( Datagram ) );
-	gram.type = DATA;
-	gram.seq = 0;
+  Datagram gram;
+  bzero( &gram, sizeof( Datagram ) );
+  gram.type = DATA;
+  gram.seq = 0;
   memcpy( gram.data, &findRecord, sizeof( record_t ) );
-  
-
-	sendgram( sock, &gram );
+  sendgram( sock, &gram );
 
 
   // Now do the actual writing of the data out to the socket.
@@ -318,26 +310,24 @@ void retriveRecord( sock_t sock )
   bzero( &resultRec, sizeof( resultRec ) );
 
   // Get the result back from the server
-getRecord:
+  getRecord:
 
-	cerr << "Trying to receive" << endl;
-	if ( recv( sock.sock, &resultRec, sizeof( resultRec ), 0 ) < 0 )
-	{
-		Datagram gram;
-		bzero( &gram, sizeof( Datagram ) );
-		gram.type = ACK;
-	  sendto( sock.sock, &gram, sizeof( Datagram ),
-	  			  0, (struct sockaddr*) &(sock.address),
-					  sizeof( struct sockaddr ) );
-
-
-
-	}
-	else
-	{
-		cerr << "Error trying to receive" << endl;
-		goto getRecord;
-	}
+  cerr << "Trying to receive" << endl;
+  if ( recv( sock.sock, &gram, sizeof( Datagram ), 0 ) < 0 )
+  {
+    Datagram gram2;
+    bzero( &gram2, sizeof( Datagram ) );
+    gram.type = ACK;
+    sendto( sock.sock, &gram2, sizeof( Datagram ), 0,
+            (struct sockaddr*) &(sock.address),
+            sizeof( struct sockaddr ) );
+    sock.seq++;
+  }
+  else
+  {
+    cerr << "Error trying to receive" << endl;
+    goto getRecord;
+  }
 			
   // Display our results
   if ( resultRec.command == RET_SUCCESS )
@@ -400,18 +390,17 @@ int main( int argc, char** argv )
       }
       else if ( cmd == quit_t )
       {
-				Datagram gram;
-				bzero( &gram, sizeof( Datagram ) );
-				gram.type = FIN;
-				sendgram( sock, &gram );
-        shutdown( sock.sock, SHUT_RDWR );
+        Datagram gram;
+        bzero( &gram, sizeof( Datagram ) );
+        gram.type = FIN;
+        sendgram( sock, &gram );
         close( sock.sock );
         break;
       }
-			else
-			{
-				cout << "Illegal command " << cmd << endl;
-			}
+      else
+      {
+        cout << "Illegal command " << cmd << endl;
+      }
     }
   }
   return EXIT_SUCCESS;
