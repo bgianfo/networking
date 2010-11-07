@@ -5,7 +5,7 @@
  * records from a remote database server. 
  *
  * Usage: udp-project3 hostname port
- * 				
+ *                              
  * Where 'hostname' is the name of the remote host on which
  * the server is running and 'port' is the port number it is using.
  */
@@ -16,8 +16,8 @@
   using std::cerr;
   using std::endl;
 
-#include <string>	
-	using std::string;
+#include <string>       
+        using std::string;
 
 // Utilities, IO and Error checking
 #include <errno.h>
@@ -83,38 +83,51 @@ sock_t setupSocket( char* hostname, int port )
   s.address.sin_port = htons( port );
   s.address.sin_addr.s_addr = *(u_long *)hostent->h_addr;
   s.addrlen = sizeof( struct sockaddr );
-	s.seq = 0;
+  s.seq = 0;
 
   Datagram gram;
   bzero( &gram, sizeof( gram ) );
-	gram.type = SYN;
+  gram.type = SYN;
 
-	bool timedOut;
-	int timeOuts = 0;
+  bool timedOut;
+  int timeOuts = 0;
+  struct sockaddr_in address;
+  struct sockaddr* addr = (struct sockaddr*) &address;
+  socklen_t len = sizeof( address );
 
-	do {
-		sendto( s.sock, (char *)&gram, 8, 0, (struct sockaddr *)&s.address, s.addrlen );
 
-		timedOut = false;
+  do {
+    sendto( s.sock, (char *)&gram, 8, 0, (struct sockaddr *)&s.address, s.addrlen );
 
-		start_timer( TIME_OUT, timedOut );
-		recvfrom( s.sock, (char *)&gram, sizeof( gram ), 0, (struct sockaddr *)&s.address, &s.addrlen );
-		stop_timer();
+    timedOut = false;
 
-		if ( timedOut )
-		{
-			cout << "Connection time out #" << ++timeOuts << endl;
-			
-			if ( timeOuts > 5 ) 
-			{
-				cout << "Connection failed. Exiting..." << endl;
-				close( s.sock );
-				exit(EXIT_FAILURE);
-			}
-		}
-	} while( timedOut );
+    start_timer( TIME_OUT, timedOut );
+    trySynAck:
+      recvfrom( s.sock, (char *)&gram, sizeof( gram ), 0, addr, &len );
 
-	return s;
+      if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+           || sock.address.sin_port != address.sin_port )
+      {
+        cout << "Packet arrived fom an unexpected source, discarding." << endl;
+        goto trySynAck;
+      }
+
+    stop_timer();
+
+    if ( timedOut )
+    {
+      cout << "Connection time out #" << ++timeOuts << endl;
+      if ( timeOuts > 5 ) 
+      {
+        cout << "Connection failed. Exiting..." << endl;
+        close( s.sock );
+        exit( EXIT_FAILURE );
+      }
+    }
+  }
+  while ( timedOut );
+
+  return s;
 }
 
 /**
@@ -171,101 +184,99 @@ void addRecord( sock_t& sock )
   gram.type = DATA;
   gram.seq = sock.seq;
   memcpy( gram.data, &newRecord, sizeof( record_t ) );
- 	
+        
   record_t resultRec;
 
-	bool timedOut;
-	int timeOuts = 0;
+  bool timedOut;
+  int timeOuts = 0;
   struct sockaddr_in address;
-	struct sockaddr* addr = (struct sockaddr*) &address;
-	socklen_t len = sizeof( address );
+  struct sockaddr* addr = (struct sockaddr*) &address;
+  socklen_t len = sizeof( address );
 
-	do
-	{
-		// Send add request
-		sendto( sock.sock, (char *)&gram, sizeof( Datagram ), 0,
-					  (struct sockaddr *)&sock.address, sock.addrlen );
-		timedOut = false;
-		start_timer( TIME_OUT, timedOut );
-		unsigned int seqCheck;
-	  bool finished = false;
-		do
-		{
-			// Receive ACK
-			recvfrom( sock.sock, (char *)&gram, sizeof(Datagram),0,
-			        	addr, &len );
+  do
+  {
+    // Send add request
+    sendto( sock.sock, (char *)&gram, sizeof( Datagram ), 0,
+                       (struct sockaddr *)&sock.address, sock.addrlen );
+    timedOut = false;
+    start_timer( TIME_OUT, timedOut );
+    unsigned int seqCheck;
+    bool finished = false;
+    do
+    {
+      // Receive ACK
+      recvfrom( sock.sock, (char *)&gram, sizeof(Datagram),0,
+                addr, &len );
 
-			seqCheck = gram.seq;
-			if ( seqCheck != sock.seq )
-			{
-				cout << "Incorrect Seq number recieved." << endl;
-			}
+      seqCheck = gram.seq;
+      if ( seqCheck != sock.seq )
+      {
+        cout << "Incorrect Seq number recieved." << endl;
+      }
 
-			if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
-					 || sock.address.sin_port != address.sin_port )
-			{
-				cout << "Packet arrived fom an unexpected source, discarding." << endl;
-				finished = false;
-			}
-			else
-			{
-				finished = true;
-			}
+      if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+           || sock.address.sin_port != address.sin_port )
+      {
+        cout << "Packet arrived fom an unexpected source, discarding." << endl;
+        finished = false;
+      }
+      else
+      {
+        finished = true;
+      }
+    }
+    while ( seqCheck != sock.seq || not finished );
 
-		}
-		while ( seqCheck != sock.seq || not finished );
-		stop_timer();
+    stop_timer();
 
-		if ( timedOut )
-		{
-			cout << "Add request time out #" << ++timeOuts << endl;
-	
-			if ( timeOuts > 5 )
-			{
-				cout << "Add request timed out..." << endl;
-			}
-		} 
-	}
-	while( timedOut && timeOuts < 5 );
+    if ( timedOut )
+    {
+      cout << "Add request time out #" << ++timeOuts << endl;
+    
+      if ( timeOuts > 5 )
+      {
+        cout << "Add request timed out..." << endl;
+      }
+    } 
+  }
+  while( timedOut && timeOuts < 5 );
 
-	if ( not timedOut )
-	{
-	  tryAddAck:
-		// Receive success/failure
-		recvfrom( sock.sock, (char *)&gram, sizeof(gram), 0,
-				      addr, &len );
+  if ( not timedOut )
+  {
+    tryAddAck:
 
-		if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
-				 || sock.address.sin_port != address.sin_port )
-		{
-			cout << "Packet arrived fom an unexpected source, discarding." << endl;
-			goto tryAddAck;
-		}
+    // Receive success/failure
+    recvfrom( sock.sock, (char *)&gram, sizeof(gram), 0,
+                          addr, &len );
 
+    if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+         || sock.address.sin_port != address.sin_port )
+    {
+      cout << "Packet arrived fom an unexpected source, discarding." << endl;
+      goto tryAddAck;
+    }
 
+    memcpy( &resultRec, gram.data, sizeof( record_t ) );
 
-		memcpy( &resultRec, gram.data, sizeof( record_t ) );
-
-		if ( resultRec.command == ADD_SUCCESS )
-		{
-			cout << "ID " << newRecord.id << " added successfully" << endl;
-		}
-		else
-		{
+    if ( resultRec.command == ADD_SUCCESS )
+    {
+      cout << "ID " << newRecord.id << " added successfully" << endl;
+    }
+    else
+    {
       cout << "ID " << newRecord.id << " already exists" << endl;
-		}
- 
-		// Send ACK
-		gram.type = ACK;
-		gram.seq = sock.seq;
-		sendto( sock.sock, (char *)&gram, 8, 0,
-				    (struct sockaddr *)&sock.address,
-						sock.addrlen );
+    }
 
-		// Update Sequence Number
-		++(sock.seq);
-		cout << "Add: Incremented sequence#" << sock.seq << endl;
-	}
+    // Send ACK
+    gram.type = ACK;
+    gram.seq = sock.seq;
+    sendto( sock.sock, (char *)&gram, 8, 0,
+            (struct sockaddr *)&sock.address,
+            sock.addrlen );
+
+    // Update Sequence Number
+    ++(sock.seq);
+  }
 }
 
 /**
@@ -293,100 +304,99 @@ void retriveRecord( sock_t& sock )
   record_t resultRec;
   bzero( &resultRec, sizeof( resultRec ) );
 
-	bool timedOut;
-	int timeOuts = 0;
+  bool timedOut;
+  int timeOuts = 0;
   struct sockaddr_in address;
-	struct sockaddr* addr = (struct sockaddr*) &address;
-	socklen_t len = sizeof( address );
+  struct sockaddr* addr = (struct sockaddr*) &address;
+  socklen_t len = sizeof( address );
 
-	do
-	{
-		// Send add request
-		sendto( sock.sock, &gram, sizeof( Datagram ), 0,
-					  (struct sockaddr *)&sock.address, sock.addrlen );
-		timedOut = false;
-		start_timer( TIME_OUT, timedOut );
-		unsigned int seqCheck;
+  do
+  {
+    // Send add request
+    sendto( sock.sock, &gram, sizeof( Datagram ), 0,
+                              (struct sockaddr *)&sock.address, sock.addrlen );
+    timedOut = false;
+    start_timer( TIME_OUT, timedOut );
+    unsigned int seqCheck;
 
-		bool finished = false;
-		do
-		{
-			// Receive ACK
-			recvfrom( sock.sock, (char *)&gram, sizeof(gram),0,
-			        	addr, &len );
+    bool finished = false;
+    do
+    {
+      // Receive ACK
+      recvfrom( sock.sock, (char *)&gram, sizeof(gram),0,
+                      addr, &len );
 
-			seqCheck = gram.seq;
-			if ( seqCheck != sock.seq )
-			{
-				cout << "Incorrect Seq number received." << endl;
-			}
+      seqCheck = gram.seq;
+      if ( seqCheck != sock.seq )
+      {
+        cout << "Incorrect Seq number received." << endl;
+      }
 
-			if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
-					 || sock.address.sin_port != address.sin_port )
-			{
-				cout << "Packet arrived fom an unexpected source, discarding." << endl;
-				finished = false;
-			}
-			else
-			{
-				finished = true;
-			}
+      if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+           || sock.address.sin_port != address.sin_port )
+      {
+        cout << "Packet arrived fom an unexpected source, discarding." << endl;
+        finished = false;
+      }
+      else
+      {
+        finished = true;
+      }
 
-		}
-		while( seqCheck != sock.seq || not finished );
-		stop_timer();
+    }
+    while( seqCheck != sock.seq || not finished );
+    stop_timer();
 
-		if ( timedOut )
-		{
-			cout << "Retrieve request time out #" << ++timeOuts << endl;
-	
-			if ( timeOuts > 5 )
-			{
-				cout << "Retrieve request timed out..." << endl;
-			}
-		} 
-	}
-	while( timedOut && timeOuts < 5 );
+    if ( timedOut )
+    {
+            cout << "Retrieve request time out #" << ++timeOuts << endl;
 
-	if ( not timedOut )
-	{
-    retryGet:
-		// Receive success/failure
-		recvfrom( sock.sock, (char *)&gram, sizeof(gram), 0,
-			       	addr, &len );
+            if ( timeOuts > 5 )
+            {
+                    cout << "Retrieve request timed out..." << endl;
+            }
+    } 
+  }
+  while( timedOut && timeOuts < 5 );
 
-		if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
-				 || sock.address.sin_port != address.sin_port )
-		{
-			cout << "Packet arrived fom an unexpected source, discarding." << endl;
-			goto retryGet;
-		}
+   if ( not timedOut )
+   {
+     retryGet:
+     // Receive success/failure
+     recvfrom( sock.sock, (char *)&gram, sizeof(gram), 0,
+                     addr, &len );
 
-		memcpy( &resultRec, gram.data, sizeof( record_t ) );
+     if ( sock.address.sin_addr.s_addr != address.sin_addr.s_addr
+                      || sock.address.sin_port != address.sin_port )
+     {
+       cout << "Packet arrived fom an unexpected source, discarding." << endl;
+       goto retryGet;
+     }
 
-		// Display our results
-		if ( resultRec.command == RET_SUCCESS )
-		{
-			cout << "ID: " << resultRec.id << endl;
-			cout << "Name: " << resultRec.name << endl;
-			cout << "Age: " << resultRec.age << endl;
-		}
-		else
-		{
-			cout << "ID " << findRecord.id << " does not exist" << endl;
-		}
- 
-		// Send ACK
-		gram.type = ACK;
-		gram.seq = sock.seq;
-		sendto( sock.sock, (char *)&gram, 8, 0,
-				    (struct sockaddr *)&sock.address,
-						sock.addrlen );
+     memcpy( &resultRec, gram.data, sizeof( record_t ) );
 
-		// Update Sequence Number
-		++(sock.seq);
-		cout << "Ret: Incremented sequence# " << sock.seq << endl;
-	}
+     // Display our results
+     if ( resultRec.command == RET_SUCCESS )
+     {
+       cout << "ID: " << resultRec.id << endl;
+       cout << "Name: " << resultRec.name << endl;
+       cout << "Age: " << resultRec.age << endl;
+     }
+     else
+     {
+       cout << "ID " << findRecord.id << " does not exist" << endl;
+     }
+
+     // Send ACK
+     gram.type = ACK;
+     gram.seq = sock.seq;
+     sendto( sock.sock, (char *)&gram, 8, 0,
+             (struct sockaddr *)&sock.address,
+             sock.addrlen );
+
+     // Update Sequence Number
+     ++(sock.seq);
+  }
 }
 
 
@@ -400,7 +410,7 @@ int main( int argc, char** argv )
 {
 
   if ( argc != 3 )
-  {	
+  {     
     usage( argv[0] );
     return EXIT_FAILURE;
   }
@@ -418,7 +428,7 @@ int main( int argc, char** argv )
     
     sock_t sock = setupSocket( hostname, port );
 
-    while ( true )	
+    while ( true )      
     {
 
       cout << "Enter command (" << add_t << " for Add, " << retrive_t 
@@ -440,8 +450,8 @@ int main( int argc, char** argv )
         Datagram gram;
         bzero( &gram, sizeof( Datagram ) );
         gram.type = FIN;
-				gram.seq = sock.seq;
-			  sendto( sock.sock, (char *)&gram, 8, 0, (struct sockaddr *)&sock.address, sock.addrlen );
+        gram.seq = sock.seq;
+        sendto( sock.sock, (char *)&gram, 8, 0, (struct sockaddr *)&sock.address, sock.addrlen );
         close( sock.sock );
         break;
       }
