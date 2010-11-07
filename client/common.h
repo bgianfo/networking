@@ -38,7 +38,7 @@ typedef struct
 /* Enum defining all actions the user can initiate */
 typedef enum {
   add_t = 0,
-  retrive_t = 1,
+  retrieve_t = 1,
   quit_t = 2
 } actions_t;
 

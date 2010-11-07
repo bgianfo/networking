@@ -1,11 +1,11 @@
 /**
  * Author: Brian Gianforcaro ( bjg1955@cs.rit.edu )
  *
- * Description: A client appiication that can add, retrive
- * records from a remote database server. 
+ * Description: A client appiication that can add, retrieve
+ * records from a remote database server.
  *
  * Usage: tcp-project1 hostname port
- * 				
+ *
  * Where 'hostname' is the name of the remote host on which
  * the server is running and 'port' is the port number it is using.
  */
@@ -18,8 +18,11 @@
 
 #include <string>	
 	using std::string;
+#include <string>
+  using std::string;
 
 // Utilities, IO and Error checking
+#include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -41,7 +44,7 @@
  * @param[in] hostname - The hostname to use when connecting.
  * @param[in] port - The port number to use when connecting.
  *
- * @return A file descriptor to the setup and connected socket. 
+ * @return A file descriptor to the setup and connected socket.
  */
 int setupSocket( char* hostname, int port )
 {
@@ -88,7 +91,12 @@ void usage( char* binary )
   cerr << "Usage: " << binary << " hostname port " << endl;
 }
 
-
+/**
+ * Attempt to get an integer input from the user.
+ *
+ * @param[in] msg - The error message to display on bad input
+ * @return the actual value we have received.
+ */
 int obtainInt( string msg )
 {
   int value = 0;
@@ -135,28 +143,31 @@ void addRecord( int sock )
 
   read( sock, (char*) &resultRec, sizeof(resultRec.command) );
 
-  if ( resultRec.command == ADD_SUCCESS )
+  string response;
+  if ( ADD_SUCCESS == resultRec.command )
   {
-    cout << "ID " << newRecord.id << " added successfully" << endl;
+    response = " added successfully";
   }
   else
   {
-    cout << "ID " << newRecord.id << " already exists" << endl;
+    response = " already exists";
   }
+
+  cout << "ID " << newRecord.id << response << endl;
 }
 
 
 /**
- * Attempt to retrive a record from the remote database.
+ * Attempt to retrieve a record from the remote database.
  *
  * @param[in] sock - The socket's file descriptor
  */
-void retriveRecord( int sock )
+void retrieveRecord( int sock )
 {
   record_t findRecord;
   bzero( &findRecord, sizeof( findRecord ) );
 
-  findRecord.command = retrive_t;
+  findRecord.command = retrieve_t;
   findRecord.id = 0;
 
   cout << "Enter id (interger):";
@@ -216,8 +227,8 @@ int main( int argc, char** argv )
     while ( true )	
     {
 
-      cout << "Enter command (" << add_t << " for Add, " << retrive_t 
-           << " for Retrive, " << quit_t << " to quit):"; 
+      cout << "Enter command (" << add_t << " for Add, " << retrieve_t 
+           << " for retrieve, " << quit_t << " to quit):"; 
 
       int cmd = 100; 
       scanf( "%d", &cmd );
@@ -226,9 +237,9 @@ int main( int argc, char** argv )
       {
         addRecord( sock );
       }
-      else if ( cmd == retrive_t )
+      else if ( cmd == retrieve_t )
       {
-        retriveRecord( sock );
+        retrieveRecord( sock );
       }
       else if ( cmd == quit_t )
       {
@@ -236,10 +247,10 @@ int main( int argc, char** argv )
         close( sock );
         break;
       }
-			else
-			{
-				cout << "Illegal command " << cmd << endl;
-			}
+      else
+      {
+        cout << "Illegal command " << cmd << endl;
+      }
     }
   }
   return EXIT_SUCCESS;
